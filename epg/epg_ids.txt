@@ -9,11 +9,6 @@ C9N.py
 canal_pro.py
 unicanal.py
 
-# Nuevos canales paraguayos - TV Guide API
-ABCTV.py
-Trece.py
-Paravision.py
-SurTVItapua.py
 
 
 # Deportes
