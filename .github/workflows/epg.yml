@@ -30,6 +30,8 @@ jobs:
           python-version: "3.12"
 
       - name: Actualizar EPG
+        env:
+          TVG_API_KEY: ${{ secrets.TVG_API_KEY }}
         run: python epg/build_epg.py
 
       - name: Guardar cambios
