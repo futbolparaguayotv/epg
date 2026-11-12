@@ -1,4 +1,3 @@
-
 name: Actualizar EPG
 
 on:
@@ -16,56 +15,41 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Descargar repositorio
         uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
-
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Actualizar EPG
-        env:
-          TVG_API_KEY: ${{ secrets.TVG_API_KEY }}
         run: python epg/build_epg.py
-
       - name: Guardar cambios
         run: |
           git config user.name "epg-bot"
           git config user.email "epg-bot@users.noreply.github.com"
-
           git add epg/epg.json
-
           if git diff --cached --quiet; then
             echo "No hay cambios en el EPG"
             exit 0
           fi
-
           git commit -m "Actualizar EPG"
-
           for intento in 1 2 3; do
             git fetch origin main
-
             if git rebase origin/main && git push origin HEAD:main; then
               echo "EPG actualizado correctamente"
               exit 0
             fi
-
             if [ -d "$(git rev-parse --git-path rebase-merge)" ] || \
                [ -d "$(git rev-parse --git-path rebase-apply)" ]; then
               git rebase --abort
               echo "Conflicto al integrar cambios"
               exit 1
             fi
-
-            echo "Reintentando subida..."
             sleep 5
           done
-
           echo "No se pudo subir el EPG"
           exit 1
