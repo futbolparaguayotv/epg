@@ -1,10 +1,13 @@
 name: Actualizar EPG
+
 on:
   schedule:
-    - cron: "0 */6 * * *"
-  workflow_dispatch:
+    - cron: "0 */6 * * *"   # cada 6 horas
+  workflow_dispatch:         # también se puede lanzar a mano
+
 permissions:
   contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -13,24 +16,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Actualizar EPG XMLTV
-        run: python epg/build_epg.py
-      - name: Actualizar los 10 canales Claro
-        env:
-          CLARO_EPG_SOURCE_URL: ${{ secrets.CLARO_EPG_SOURCE_URL }}
-        run: |
-          if [ -z "$CLARO_EPG_SOURCE_URL" ]; then
-            echo "ERROR: Falta el secreto CLARO_EPG_SOURCE_URL"
-            exit 1
-          fi
-          python epg/update_claro.py
-      - name: Publicar cambios
-        if: always()
+      - run: python epg/build_epg.py
+      - name: Guardar cambios
         run: |
           git config user.name "epg-bot"
           git config user.email "epg-bot@users.noreply.github.com"
           git add epg/epg.json
-          if ! git diff --staged --quiet; then
-            git commit -m "Actualizar EPG"
-            git push
-          fi
+          git diff --staged --quiet || git commit -m "Actualizar EPG"
+          git push
