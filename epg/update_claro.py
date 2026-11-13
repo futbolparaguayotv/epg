@@ -32,29 +32,44 @@ def load_source():
     if not url:
         raise RuntimeError('CLARO_EPG_SOURCE_URL no configurada')
 
-    now = datetime.now(timezone(timedelta(hours=-3)))
     parts = urllib.parse.urlsplit(url)
     if parts.scheme != 'https' or parts.hostname != 'mfwkweb-api.clarovideo.net' or parts.path != '/services/epg/channel':
         raise ValueError('La fuente debe ser el endpoint HTTPS EPG de Claro Video')
-    qs = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
-    dates = {
-        'date_from': now.strftime('%Y%m%d%H%M%S'),
-        'date_to': (now + timedelta(hours=36)).strftime('%Y%m%d%H%M%S'),
-    }
-    keys = {k for k, _ in qs}
-    qs = [(k, dates.get(k, v)) for k, v in qs]
-    for k, v in dates.items():
-        if k not in keys:
-            qs.append((k, v))
-    safe_url = urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, urllib.parse.urlencode(qs), ''))
-    request = urllib.request.Request(safe_url, headers={
-        'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'
+
+    # Chrome solicitó 24 horas entre las 23:00 de dos días consecutivos.
+    # Se conserva la hora de inicio original de la URL y se desplaza el día.
+    params = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+    original = dict(params)
+    try:
+        start_time = datetime.strptime(original['date_from'], '%Y%m%d%H%M%S').time()
+    except (KeyError, ValueError):
+        start_time = datetime.strptime('230000', '%H%M%S').time()
+
+    local_now = datetime.now(timezone(timedelta(hours=-3)))
+    start = local_now.replace(hour=start_time.hour, minute=start_time.minute,
+                              second=start_time.second, microsecond=0)
+    if start > local_now:
+        start -= timedelta(days=1)
+    end = start + timedelta(days=1)
+
+    replacements = {'date_from': start.strftime('%Y%m%d%H%M%S'),
+                    'date_to': end.strftime('%Y%m%d%H%M%S')}
+    updated = [(key, replacements.get(key, value)) for key, value in params]
+    for key, value in replacements.items():
+        if key not in original:
+            updated.append((key, value))
+    request_url = urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path,
+                                           urllib.parse.urlencode(updated), ''))
+    request = urllib.request.Request(request_url, headers={
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
     })
+    print(f'Solicitando 24 horas de EPG desde {replacements["date_from"]} hasta {replacements["date_to"]} (hora Paraguay)')
     try:
         with urllib.request.urlopen(request, timeout=45) as response:
             return json.load(response)
     except urllib.error.HTTPError as exc:
-        raise RuntimeError(f'Claro devolvió HTTP {exc.code}; revisar autorización y vigencia de la URL') from None
+        raise RuntimeError(f'Claro devolvió HTTP {exc.code}; revisar sesión o parámetros') from None
     except urllib.error.URLError:
         raise RuntimeError('No fue posible conectar con la API EPG de Claro') from None
 
