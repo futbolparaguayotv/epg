@@ -15,19 +15,22 @@ jobs:
           python-version: "3.12"
       - name: Actualizar EPG XMLTV
         run: python epg/build_epg.py
-      - name: Añadir EPG Claro (sin borrar otros canales)
+      - name: Actualizar los 10 canales Claro
         env:
           CLARO_EPG_SOURCE_URL: ${{ secrets.CLARO_EPG_SOURCE_URL }}
         run: |
-          if [ -n "$CLARO_EPG_SOURCE_URL" ]; then
-            python epg/update_claro.py || echo "Claro no disponible: se conserva EPG anterior"
-          else
-            echo "Sin fuente Claro configurada: se conserva EPG actual"
+          if [ -z "$CLARO_EPG_SOURCE_URL" ]; then
+            echo "ERROR: Falta el secreto CLARO_EPG_SOURCE_URL"
+            exit 1
           fi
+          python epg/update_claro.py
       - name: Publicar cambios
+        if: always()
         run: |
           git config user.name "epg-bot"
           git config user.email "epg-bot@users.noreply.github.com"
           git add epg/epg.json
-          git diff --staged --quiet || git commit -m "Actualizar EPG"
-          git push
+          if ! git diff --staged --quiet; then
+            git commit -m "Actualizar EPG"
+            git push
+          fi
