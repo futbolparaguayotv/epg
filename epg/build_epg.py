@@ -94,20 +94,6 @@ def main():
     for lista in canales.values():
         lista.sort(key=lambda p: p[0])
 
-    # Conservar canales añadidos por Claro cuando se regenera desde XMLTV.
-    claro_keys = {"GEN.py", "Trece.py", "Paravision.py", "SurTV.py",
-                  "Venus Media.py", "Venus.py", "Ñanduti.py",
-                  "America Paraguay.py", "Popu TV.py", "HEI.py"}
-    if os.path.isfile(OUT_FILE):
-        try:
-            with open(OUT_FILE, encoding="utf-8") as previous:
-                prev = json.load(previous).get("canales", {})
-            for cid in claro_keys:
-                if prev.get(cid):
-                    canales[cid] = prev[cid]
-        except (ValueError, OSError):
-            pass
-
     with open(OUT_FILE, "w", encoding="utf-8") as f:
         json.dump({"generado": ahora, "canales": canales}, f,
                   ensure_ascii=False, separators=(",", ":"))
