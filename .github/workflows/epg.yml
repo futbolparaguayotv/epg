@@ -1,13 +1,10 @@
 name: Actualizar EPG
-
 on:
   schedule:
-    - cron: "0 */6 * * *"   # cada 6 horas
-  workflow_dispatch:         # también se puede lanzar a mano
-
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
 permissions:
   contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -16,8 +13,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python epg/build_epg.py
-      - name: Guardar cambios
+      - name: Actualizar EPG XMLTV
+        run: python epg/build_epg.py
+      - name: Añadir EPG Claro (sin borrar otros canales)
+        env:
+          CLARO_EPG_SOURCE_URL: ${{ secrets.CLARO_EPG_SOURCE_URL }}
+        run: |
+          if [ -n "$CLARO_EPG_SOURCE_URL" ]; then
+            python epg/update_claro.py || echo "Claro no disponible: se conserva EPG anterior"
+          else
+            echo "Sin fuente Claro configurada: se conserva EPG actual"
+          fi
+      - name: Publicar cambios
         run: |
           git config user.name "epg-bot"
           git config user.email "epg-bot@users.noreply.github.com"
