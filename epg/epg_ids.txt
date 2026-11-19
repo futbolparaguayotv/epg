@@ -9,6 +9,10 @@ NoticiasParaguay.py
 C9N.py
 canal_pro.py
 unicanal.py
+ABCTV.py
+Hei.py
+ParaguayTV.py
+Paravision.py
 
 # Deportes
 DeporTV.ar
