@@ -19,11 +19,12 @@ import gzip
 import io
 import json
 import os
+import re
 import sys
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 # Cambia esto por TU propio XMLTV cuando lo tengas.
 # Si usas el de otra persona, pídele permiso primero.
@@ -73,6 +74,62 @@ def a_epoch(texto):
     return int(datetime.strptime(texto.strip(), "%Y%m%d%H%M%S %z").timestamp())
 
 
+GEN_URL = "https://www.gen.com.py/"
+GEN_TZ = timezone(timedelta(hours=-3))
+
+
+def extraer_gen(html):
+    for m in re.finditer(r'"settings"\s*:\s*', html):
+        try:
+            raw, _ = json.JSONDecoder().raw_decode(html[m.end():])
+            datos = json.loads(raw) if isinstance(raw, str) else raw
+            dias = datos.get("programacion")
+            if isinstance(dias, list) and len(dias) == 5 and all(dias):
+                return dias
+        except (ValueError, AttributeError, TypeError):
+            continue
+    raise ValueError("No se encontró la programación semanal de GEN")
+
+
+def programas_gen(html, desde, hasta):
+    dias = extraer_gen(html)
+    fecha = datetime.fromtimestamp(desde, GEN_TZ).date()
+    ultima = datetime.fromtimestamp(hasta, GEN_TZ).date()
+    salida = []
+    while fecha <= ultima:
+        if fecha.weekday() < 5:
+            filas = []
+            for programa in dias[fecha.weekday()]:
+                hora = datetime.strptime(programa["hora_inicio"], "%H:%M").time()
+                inicio = datetime.combine(fecha, hora, tzinfo=GEN_TZ)
+                filas.append((inicio, programa["programa"].strip()))
+            filas.sort()
+            for i, (inicio, titulo) in enumerate(filas):
+                # La web no publica el fin del último programa: estimar medianoche.
+                fin = filas[i+1][0] if i+1 < len(filas) else datetime.combine(fecha + timedelta(days=1), datetime.min.time(), tzinfo=GEN_TZ)
+                a, b = int(inicio.timestamp()), int(fin.timestamp())
+                if b > desde and a < hasta and b > a and titulo:
+                    salida.append([a, b, titulo, ""])
+        fecha += timedelta(days=1)
+    return salida
+
+
+def actualizar_gen(canales, desde, hasta):
+    if "Gen.py" not in canales:
+        return
+    try:
+        req = urllib.request.Request(GEN_URL, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            html = r.read().decode("utf-8")
+        oficial = programas_gen(html, desde, hasta)
+        # Conservar SurTV únicamente donde no se superpone con la fuente oficial.
+        respaldo = [p for p in canales["Gen.py"] if not any(p[0] < q[1] and p[1] > q[0] for q in oficial)]
+        canales["Gen.py"] = oficial + respaldo
+        print(f"GEN oficial: {len(oficial)} programas")
+    except Exception as exc:
+        print(f"GEN oficial no disponible; se conserva SurTV: {exc}")
+
+
 def main():
     origen = sys.argv[1] if len(sys.argv) > 1 else None
     ids = leer_ids()
@@ -101,6 +158,8 @@ def main():
                     and titulo.lower() not in RELLENO):
                 canales[cid].append([ini, fin, titulo, detalle])
         el.clear()  # libera memoria: el XML puede pesar varios MB
+
+    actualizar_gen(canales, desde, hasta)
 
     for lista in canales.values():
         lista.sort(key=lambda p: p[0])
