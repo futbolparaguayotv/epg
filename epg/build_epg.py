@@ -140,6 +140,7 @@ CANALES_MITV = {
     'Hei.py': 'hei-network',
     'ParaguayTV.py': 'paraguay-tv',
     'Paravision.py': 'canal-5-paravision',
+    'SurTV.py': 'sur-tv',
 }
 
 class TreceParser(HTMLParser):
