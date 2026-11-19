@@ -205,6 +205,66 @@ def actualizar_mitv_canal(canales, desde, hasta, cid, slug):
     print(f'{cid} Mi.tv: {len(programas)} programas')
 
 
+MEGA_URL = 'https://megacadena.com.py/programacion-mega-tv/'
+
+class MegaParser(HTMLParser):
+    def __init__(self):
+        super().__init__(); self.groups={}; self.day=None; self.field=None; self.buf=[]; self.row=None
+    def handle_starttag(self, tag, attrs):
+        cls=dict(attrs).get('class','').split()
+        if tag=='h2': self.field='day'; self.buf=[]
+        elif tag=='div' and 'item' in cls: self.row={}
+        elif tag=='div' and self.row is not None:
+            for k in ('hora','programa','observacion','conductores'):
+                if k in cls: self.field=k; self.buf=[]; break
+    def handle_data(self,data):
+        if self.field: self.buf.append(data)
+    def handle_endtag(self,tag):
+        if self.field and (tag=='h2' if self.field=='day' else tag=='div'):
+            v=' '.join(''.join(self.buf).split()); k=self.field; self.field=None
+            if k=='day':
+                self.day=v if v in ('LUNES','MARTES A VIERNES','SABADOS','DOMINGOS') else None
+                if self.day: self.groups.setdefault(self.day,[])
+            elif self.row is not None: self.row[k]=v
+        elif tag=='div' and self.row is not None and 'hora' in self.row and 'programa' in self.row:
+            if self.day: self.groups[self.day].append(self.row)
+            self.row=None
+
+def mega_programas(html,desde,hasta):
+    parser=MegaParser(); parser.feed(html)
+    keys=('LUNES','MARTES A VIERNES','MARTES A VIERNES','MARTES A VIERNES','MARTES A VIERNES','SABADOS','DOMINGOS')
+    if any(not parser.groups.get(k) for k in keys): raise ValueError('Grilla Mega TV incompleta')
+    fecha=datetime.fromtimestamp(desde,GEN_TZ).date()-timedelta(days=1)
+    ultima=datetime.fromtimestamp(hasta,GEN_TZ).date(); out=[]
+    while fecha<=ultima:
+        base=datetime.combine(fecha,datetime.min.time(),tzinfo=GEN_TZ)
+        for row in parser.groups[keys[fecha.weekday()]]:
+            m=re.fullmatch(r'(\d{1,2}):(\d{2})\s+A\s+(\d{1,2}):(\d{2})(?:\s*HS)?',row['hora'],re.I)
+            if not m: raise ValueError('Horario Mega TV inesperado: '+row['hora'])
+            h,a,j,b=map(int,m.groups()); x=h*60+a; y=j*60+b
+            if x<360: x+=1440
+            if y<=x: y+=1440
+            if y<=x or y-x>1440: raise ValueError('Duración Mega TV inválida')
+            ini=int((base+timedelta(minutes=x)).timestamp()); fin=int((base+timedelta(minutes=y)).timestamp())
+            if fin>desde and ini<hasta:
+                detail=' · '.join(row[k] for k in ('observacion','conductores') if row.get(k))
+                out.append([ini,fin,row['programa'],detail])
+        fecha+=timedelta(days=1)
+    return sorted(out)
+
+def actualizar_mega(canales,desde,hasta):
+    cid='MegaTV.py'
+    try:
+        req=urllib.request.Request(MEGA_URL,headers={'User-Agent':'Mozilla/5.0'})
+        with urllib.request.urlopen(req,timeout=25) as r: html=r.read().decode('utf-8')
+        oficial=mega_programas(html,desde,hasta)
+        if not oficial: raise ValueError('Sin programas en ventana')
+        respaldo=[p for p in canales.get(cid,[]) if not any(p[0]<q[1] and p[1]>q[0] for q in oficial)]
+        canales[cid]=oficial+respaldo
+        print(f'{cid}: {len(oficial)} programas oficiales')
+    except Exception as exc: print(f'{cid}: se conserva SurTV si existe: {exc}')
+
+
 def main():
     origen = sys.argv[1] if len(sys.argv) > 1 else None
     ids = leer_ids()
@@ -237,6 +297,8 @@ def main():
     actualizar_gen(canales, desde, hasta)
     for cid, slug in CANALES_MITV.items():
         actualizar_mitv_canal(canales, desde, hasta, cid, slug)
+
+    actualizar_mega(canales, desde, hasta)
 
     for lista in canales.values():
         lista.sort(key=lambda p: p[0])
