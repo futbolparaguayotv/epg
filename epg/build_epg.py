@@ -130,6 +130,74 @@ def actualizar_gen(canales, desde, hasta):
         print(f"GEN oficial no disponible; se conserva SurTV: {exc}")
 
 
+from html.parser import HTMLParser
+from urllib.error import URLError
+
+MITV_URL = 'https://mi.tv/py/async/channel/canal-13'
+
+class TreceParser(HTMLParser):
+    def __init__(self):
+        super().__init__(); self.rows=[]; self.active=False; self.row=None; self.field=None; self.heading=False; self.date_text=''
+    def handle_starttag(self, tag, attrs):
+        a=dict(attrs); cls=a.get('class','').split()
+        if tag=='h1': self.heading=True
+        if tag=='ul' and 'broadcasts' in cls: self.active=True
+        if not self.active: return
+        if tag=='li': self.row={}
+        if self.row is None: return
+        if tag=='span' and 'time' in cls: self.field='time'
+        elif tag=='h2': self.field='title'
+        elif tag=='p' and 'synopsis' in cls: self.field='detail'
+    def handle_data(self, data):
+        if self.heading: self.date_text+=data
+        if self.row is not None and self.field: self.row[self.field]=self.row.get(self.field,'')+data
+    def handle_endtag(self, tag):
+        if tag=='h1': self.heading=False
+        if tag in ('span','h2','p'): self.field=None
+        if tag=='li' and self.row is not None:
+            if self.row.get('time') and self.row.get('title'): self.rows.append(self.row)
+            self.row=None; self.field=None
+        if tag=='ul': self.active=False
+
+def trece_inicios(html, fecha):
+    parser=TreceParser(); parser.feed(html)
+    meses='enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre'.split()
+    if not re.search(r'\b'+str(fecha.day)+r'\s+de\s+'+meses[fecha.month-1]+r'\b', parser.date_text.lower()):
+        raise ValueError('Fecha Mi.tv inesperada: '+parser.date_text)
+    filas=[]; anterior=None
+    for row in parser.rows:
+        hora=datetime.strptime(row['time'].strip(), '%H:%M').time()
+        if anterior is not None and hora < anterior: fecha += timedelta(days=1)
+        anterior=hora
+        inicio=int(datetime.combine(fecha,hora,tzinfo=GEN_TZ).timestamp())
+        filas.append((inicio,' '.join(row['title'].split()),' '.join(row.get('detail','').split())))
+    if len(filas)<2: raise ValueError('Programación Mi.tv insuficiente')
+    return filas
+
+def actualizar_trece(canales, desde, hasta):
+    canales.setdefault('Trece.py', [])
+    fecha=datetime.fromtimestamp(desde,GEN_TZ).date()-timedelta(days=1)
+    ultima=datetime.fromtimestamp(hasta,GEN_TZ).date()
+    oficial={}
+    while fecha<=ultima:
+        try:
+            url=f'{MITV_URL}/{fecha.isoformat()}/-180'
+            req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0','Referer':'https://mi.tv/py/canales/canal-13','X-Requested-With':'XMLHttpRequest'})
+            with urllib.request.urlopen(req,timeout=25) as r: html=r.read().decode('utf-8')
+            filas=trece_inicios(html,fecha)
+            for (a,t,d),(b,_,__) in zip(filas,filas[1:]):
+                if a<b and b>desde and a<hasta: oficial[a]=[a,b,t,d]
+        except Exception as exc: print(f'Trece {fecha}: {exc}')
+        fecha+=timedelta(days=1)
+    programas=[]
+    for p in sorted(oficial.values()):
+        if programas and p[0]<programas[-1][1]: programas[-1][1]=p[0]
+        programas.append(p)
+    respaldo=[p for p in canales['Trece.py'] if not any(p[0]<q[1] and p[1]>q[0] for q in programas)]
+    canales['Trece.py']=programas+respaldo
+    print(f'Trece Mi.tv: {len(programas)} programas')
+
+
 def main():
     origen = sys.argv[1] if len(sys.argv) > 1 else None
     ids = leer_ids()
@@ -160,6 +228,7 @@ def main():
         el.clear()  # libera memoria: el XML puede pesar varios MB
 
     actualizar_gen(canales, desde, hasta)
+    actualizar_trece(canales, desde, hasta)
 
     for lista in canales.values():
         lista.sort(key=lambda p: p[0])
