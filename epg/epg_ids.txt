@@ -13,6 +13,7 @@ ABCTV.py
 Hei.py
 ParaguayTV.py
 Paravision.py
+MegaTV.py
 
 # Deportes
 DeporTV.ar
