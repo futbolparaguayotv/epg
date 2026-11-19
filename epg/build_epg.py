@@ -133,7 +133,14 @@ def actualizar_gen(canales, desde, hasta):
 from html.parser import HTMLParser
 from urllib.error import URLError
 
-MITV_URL = 'https://mi.tv/py/async/channel/canal-13'
+MITV_URL = 'https://mi.tv/py/async/channel'
+CANALES_MITV = {
+    'Trece.py': 'canal-13',
+    'ABCTV.py': 'abc-tv',
+    'Hei.py': 'hei-network',
+    'ParaguayTV.py': 'paraguay-tv',
+    'Paravision.py': 'canal-5-paravision',
+}
 
 class TreceParser(HTMLParser):
     def __init__(self):
@@ -174,28 +181,28 @@ def trece_inicios(html, fecha):
     if len(filas)<2: raise ValueError('Programación Mi.tv insuficiente')
     return filas
 
-def actualizar_trece(canales, desde, hasta):
-    canales.setdefault('Trece.py', [])
+def actualizar_mitv_canal(canales, desde, hasta, cid, slug):
+    canales.setdefault(cid, [])
     fecha=datetime.fromtimestamp(desde,GEN_TZ).date()-timedelta(days=1)
     ultima=datetime.fromtimestamp(hasta,GEN_TZ).date()
     oficial={}
     while fecha<=ultima:
         try:
-            url=f'{MITV_URL}/{fecha.isoformat()}/-180'
-            req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0','Referer':'https://mi.tv/py/canales/canal-13','X-Requested-With':'XMLHttpRequest'})
+            url=f'{MITV_URL}/{slug}/{fecha.isoformat()}/-180'
+            req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0','Referer':f'https://mi.tv/py/canales/{slug}','X-Requested-With':'XMLHttpRequest'})
             with urllib.request.urlopen(req,timeout=25) as r: html=r.read().decode('utf-8')
             filas=trece_inicios(html,fecha)
             for (a,t,d),(b,_,__) in zip(filas,filas[1:]):
                 if a<b and b>desde and a<hasta: oficial[a]=[a,b,t,d]
-        except Exception as exc: print(f'Trece {fecha}: {exc}')
+        except Exception as exc: print(f'{cid} {fecha}: {exc}')
         fecha+=timedelta(days=1)
     programas=[]
     for p in sorted(oficial.values()):
         if programas and p[0]<programas[-1][1]: programas[-1][1]=p[0]
         programas.append(p)
-    respaldo=[p for p in canales['Trece.py'] if not any(p[0]<q[1] and p[1]>q[0] for q in programas)]
-    canales['Trece.py']=programas+respaldo
-    print(f'Trece Mi.tv: {len(programas)} programas')
+    respaldo=[p for p in canales[cid] if not any(p[0]<q[1] and p[1]>q[0] for q in programas)]
+    canales[cid]=programas+respaldo
+    print(f'{cid} Mi.tv: {len(programas)} programas')
 
 
 def main():
@@ -228,7 +235,8 @@ def main():
         el.clear()  # libera memoria: el XML puede pesar varios MB
 
     actualizar_gen(canales, desde, hasta)
-    actualizar_trece(canales, desde, hasta)
+    for cid, slug in CANALES_MITV.items():
+        actualizar_mitv_canal(canales, desde, hasta, cid, slug)
 
     for lista in canales.values():
         lista.sort(key=lambda p: p[0])
