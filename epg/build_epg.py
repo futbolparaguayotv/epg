@@ -37,6 +37,13 @@ HORAS_ATRAS = 3      # programas que terminaron hace menos de 3 h
 HORAS_ADELANTE = 36  # programas que empiezan en las próximas 36 h
 RELLENO = ("sin informacion", "sin información")
 
+# Corrección exclusiva para los canales paraguayos de SurTV.
+DESFASE_PARAGUAY = 3 * 3600
+CANALES_PARAGUAY = {
+    "Gen.py", "LaTele.py", "SNT.py", "Telefuturo.py",
+    "NoticiasParaguay.py", "C9N.py", "canal_pro.py", "unicanal.py",
+}
+
 
 def leer_ids():
     ids = set()
@@ -84,6 +91,10 @@ def main():
             except (ValueError, TypeError):
                 el.clear()
                 continue
+            # Ajustar antes de filtrar por la ventana de programación.
+            if cid in CANALES_PARAGUAY:
+                ini += DESFASE_PARAGUAY
+                fin += DESFASE_PARAGUAY
             titulo = (el.findtext("title") or "").strip()
             detalle = (el.findtext("category") or "").strip()[:80]
             if (fin > desde and ini < hasta and titulo
