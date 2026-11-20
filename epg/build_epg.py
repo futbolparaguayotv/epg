@@ -273,6 +273,60 @@ def actualizar_mega(canales,desde,hasta):
         print(f'{cid}: {len(oficial)} programas ({fuente})')
 
 
+CANALES_LAGUIA = {
+    "America24.py": "america-24",
+}
+
+
+def extraer_laguia(html, desde, hasta):
+    programas = {}
+    for bloque in re.findall(r'<script\b[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', html, re.S | re.I):
+        try:
+            datos = json.loads(bloque)
+        except ValueError:
+            continue
+        if not isinstance(datos, dict) or datos.get("@type") != "ItemList":
+            continue
+        for elemento in datos.get("itemListElement", []):
+            item = elemento.get("item", {})
+            if item.get("@type") != "BroadcastEvent":
+                continue
+            try:
+                ini = int(datetime.fromisoformat(item["startDate"].replace("Z", "+00:00")).timestamp())
+                fin = int(datetime.fromisoformat(item["endDate"].replace("Z", "+00:00")).timestamp())
+            except (KeyError, ValueError, TypeError):
+                continue
+            obra = item.get("workFeatured") or {}
+            titulo = obra.get("name") or item.get("name", "")
+            detalle = obra.get("description") or ""
+            if fin > ini and fin > desde and ini < hasta and titulo:
+                programas[(ini, fin)] = [ini, fin, titulo, detalle]
+    return programas
+
+
+def actualizar_laguia(canales, desde, hasta):
+    for cid, slug in CANALES_LAGUIA.items():
+        if cid not in canales:
+            continue
+        programas = {}
+        for dia in ("hoy", "manana"):
+            url = f"https://laguia.tv/py/canales/{slug}/programacion/{dia}"
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "text/html"})
+                with urllib.request.urlopen(req, timeout=25) as r:
+                    html = r.read().decode("utf-8")
+                programas.update(extraer_laguia(html, desde, hasta))
+            except Exception as e:
+                print(f"{cid} LaGuia {dia}: {e}")
+        if programas:
+            nuevos = list(programas.values())
+            respaldo = [p for p in canales[cid] if not any(p[0] < q[1] and p[1] > q[0] for q in nuevos)]
+            canales[cid] = sorted(nuevos + respaldo, key=lambda p: p[0])
+            print(f"{cid} LaGuia: {len(nuevos)} programas")
+        else:
+            print(f"{cid} LaGuia: conservando SurTV")
+
+
 def main():
     origen = sys.argv[1] if len(sys.argv) > 1 else None
     ids = leer_ids()
@@ -307,6 +361,7 @@ def main():
         actualizar_mitv_canal(canales, desde, hasta, cid, slug)
 
     actualizar_mega(canales, desde, hasta)
+    actualizar_laguia(canales, desde, hasta)
 
     for lista in canales.values():
         lista.sort(key=lambda p: p[0])
