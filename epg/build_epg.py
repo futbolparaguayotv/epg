@@ -39,7 +39,7 @@ HORAS_ADELANTE = 36  # programas que empiezan en las próximas 36 h
 RELLENO = ("sin informacion", "sin información")
 
 # Corrección exclusiva para los canales paraguayos de SurTV.
-DESFASE_PARAGUAY = 3 * 3600
+DESFASE_PARAGUAY = 0
 CANALES_PARAGUAY = {
     "Gen.py", "LaTele.py", "SNT.py", "Telefuturo.py",
     "NoticiasParaguay.py", "C9N.py", "canal_pro.py", "unicanal.py",
