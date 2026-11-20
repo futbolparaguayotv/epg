@@ -15,6 +15,8 @@ ParaguayTV.py
 Paravision.py
 MegaTV.py
 SurTV.py
+America24.py
+
 # Deportes
 DeporTV.ar
 ESPN.ar
