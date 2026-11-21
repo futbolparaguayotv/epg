@@ -18,6 +18,7 @@ SurTV.py
 America24.py
 
 # Deportes
+DAZNF1.es
 DeporTV.ar
 ESPN.ar
 ESPN2.ar
