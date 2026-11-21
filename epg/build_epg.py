@@ -327,6 +327,97 @@ def actualizar_laguia(canales, desde, hasta):
             print(f"{cid} LaGuia: conservando SurTV")
 
 
+
+
+# DAZN F1: FormulaTV publica los tiempos Unix UTC en data-s y data-e.
+FORMULATV_F1_URL = "https://www.formulatv.com/programacion/dazn-f1/"
+
+
+class FormulaF1Parser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.programas = []
+        self.fila = None
+        self.campo = None
+        self.nivel = 0
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        clases = a.get("class", "").split()
+        if tag == "li" and "pmx-it" in clases and a.get("data-s") and a.get("data-e"):
+            self.fila = {"ini": a["data-s"], "fin": a["data-e"], "titulo": "", "episodio": ""}
+            self.nivel = 1
+            return
+        if self.fila is None:
+            return
+        if tag == "li":
+            self.nivel += 1
+        if tag == "h3":
+            self.campo = "titulo"
+        elif tag == "p" and "pmx-it__ep" in clases:
+            self.campo = "episodio"
+
+    def handle_data(self, data):
+        if self.fila is not None and self.campo:
+            self.fila[self.campo] += data
+
+    def handle_endtag(self, tag):
+        if self.fila is None:
+            return
+        if tag in ("h3", "p"):
+            self.campo = None
+        if tag == "li":
+            self.nivel -= 1
+            if self.nivel == 0:
+                self.programas.append(self.fila)
+                self.fila = None
+                self.campo = None
+
+
+def extraer_formulatv_f1(html, desde, hasta):
+    parser = FormulaF1Parser()
+    parser.feed(html)
+    salida = {}
+    for fila in parser.programas:
+        try:
+            ini, fin = int(fila["ini"]), int(fila["fin"])
+        except (ValueError, TypeError):
+            continue
+        titulo = " ".join(fila["titulo"].split())
+        episodio = " ".join(fila["episodio"].split())
+        if fin > ini and fin > desde and ini < hasta and titulo:
+            salida[(ini, fin)] = [ini, fin, titulo, episodio]
+    return salida
+
+
+def actualizar_formulatv_f1(canales, desde, hasta):
+    cid = "DAZNF1.es"
+    if cid not in canales:
+        return
+    encontrados = {}
+    for sufijo in ("ayer/", "", "manana/", "pasadomanana/"):
+        url = FORMULATV_F1_URL + sufijo
+        try:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "text/html",
+            })
+            with urllib.request.urlopen(req, timeout=25) as respuesta:
+                html = respuesta.read().decode("utf-8", errors="replace")
+            encontrados.update(extraer_formulatv_f1(html, desde, hasta))
+        except Exception as exc:
+            print(f"{cid} FormulaTV {sufijo or 'hoy'}: {exc}")
+    if encontrados:
+        nuevos = sorted(encontrados.values(), key=lambda p: p[0])
+        respaldo = [p for p in canales[cid] if not any(
+            p[0] < q[1] and p[1] > q[0] for q in nuevos
+        )]
+        canales[cid] = sorted(nuevos + respaldo, key=lambda p: p[0])
+        print(f"{cid} FormulaTV: {len(nuevos)} programas")
+    else:
+        print(f"{cid} FormulaTV: sin datos nuevos; conservando SurTV")
+
+
 def main():
     origen = sys.argv[1] if len(sys.argv) > 1 else None
     ids = leer_ids()
@@ -362,6 +453,7 @@ def main():
 
     actualizar_mega(canales, desde, hasta)
     actualizar_laguia(canales, desde, hasta)
+    actualizar_formulatv_f1(canales, desde, hasta)
 
     for lista in canales.values():
         lista.sort(key=lambda p: p[0])
